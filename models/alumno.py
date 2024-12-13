@@ -24,10 +24,7 @@ class UpdateAlumno(BaseModel):
     fecha_nacimiento: Optional[datetime] = Field(None)
     direccion: Optional[str] = Field(None)
     foto: Optional[str] = Field(None)
-    password: str = Field(...)  # Contraseña en texto plano
     username: Optional[str] = Field(None)
-
-
 
 class AlumnoCollection(BaseModel):
     alumnos: List[AlumnoModel]

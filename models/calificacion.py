@@ -19,6 +19,7 @@ class Calificacion(CalificacionModel):
 
 
 class UpdateCalificacion(BaseModel):
+    fecha_calificacion: datetime = Field(default_factory=datetime.utcnow)
     calificacion: Optional[float] = Field(None)
 
 

@@ -29,7 +29,7 @@ router = APIRouter()
 async def login_for_access_token(db: AsyncIOMotorClient = Depends(get_db), form_data: OAuth2PasswordRequestForm = Depends()) -> Token:
     profesor = await get_profesor_by_username(form_data.username, db)
     if not profesor:
-        alumno = get_alumno_by_username(form_data.username, db)
+        alumno = await get_alumno_by_username(form_data.username, db)
         if not alumno:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

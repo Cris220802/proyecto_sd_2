@@ -32,18 +32,18 @@ async def get_current_alumno(engine: AsyncIOMotorClient = Depends(get_db), token
     return AlumnoModel(**alumno)
 
 @router.post(
-    "/alumnos", 
+    "/alumnos",
     response_description="Agregar un nuevo Alumno",
     response_model=AlumnoModel,
     status_code=status.HTTP_201_CREATED,
     response_model_by_alias=False,
-    dependencies=[Depends(get_current_profesor)]
+    dependencies=[Depends(get_current_alumno)]
 )
 async def post_alumno(alumno: Alumno = Body(...), db: AsyncIOMotorClient = Depends(get_db)):
     hashed_password = pwd_context.hash(alumno.hashed_password)
     alumno.hashed_password = hashed_password
     new_alumno = await db.alumnos.insert_one({
-        **alumno.dict(exclude_unset=True),                                                                                                                                             
+        **alumno.dict(exclude_unset=True),
     })
     created_alumno = await db.alumnos.find_one({"_id": new_alumno.inserted_id})
     return created_alumno

@@ -4,7 +4,7 @@ from bson import ObjectId
 from pymongo import ReturnDocument
 from fastapi.responses import Response
 from typing import List
-from models.materia import MateriaModel, Materia, MateriaCollection, UpdateMateria
+from models.materia import MateriaModel, Materia, MateriaCollection, UpdateMateria, AsignarProfesor
 from core.mongo import get_db
 from api.routes.profesor import get_current_profesor
 import datetime
@@ -78,11 +78,12 @@ async def delete_materia(id: str, db: AsyncIOMotorClient = Depends(get_db)):
     "/materias/{id_materia}/asignar",
     response_description="Asignar materia a un profesor",
     status_code=status.HTTP_201_CREATED,
+    response_model=MateriaModel,
     dependencies=[Depends(get_current_profesor)]
 )
 async def asignar_materia_a_profesor(
     id_materia: str,
-    id_profesor: str = Body(..., embed=True),
+    materia: AsignarProfesor = Body(...),
     db: AsyncIOMotorClient = Depends(get_db)
 ):
     # Verifica que la materia exista
@@ -90,16 +91,19 @@ async def asignar_materia_a_profesor(
         raise HTTPException(status_code=404, detail="Materia no encontrada")
 
     # Verifica que el profesor exista
-    if not await db.profesores.find_one({"_id": ObjectId(id_profesor)}):
+    if not await db.profesores.find_one({"_id": ObjectId(materia.id_profesor)}):
         raise HTTPException(status_code=404, detail="Profesor no encontrado")
 
-    # Crea la asignación
-    nueva_asignacion = {
-        "id_materia": ObjectId(id_materia),
-        "id_profesor": ObjectId(id_profesor),
-        "fecha_asignacion": datetime.utcnow(),
-    }
-    result = await db.asignaciones.insert_one(nueva_asignacion)
+    update_result = await db.materias.find_one_and_update(
+            {"_id": ObjectId(id_materia)},
+            {"$set": {"id_profesor": materia.id_profesor}},
+            return_document=ReturnDocument.AFTER,
+        )
+    
+    if update_result is not None:
+        return update_result
+    else:
+         raise HTTPException(status_code=404, detail=f"Materia {id} no encontrada")
 
-    return {"id": str(result.inserted_id), **nueva_asignacion}
+    
 

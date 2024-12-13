@@ -8,6 +8,7 @@ PyObjectId = Annotated[str, BeforeValidator(str)]
 # Modelo para representar la Materia
 class MateriaModel(BaseModel):
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
+    id_profesor: Optional[PyObjectId] = Field(...)
     nombre: str = Field(...)
     descripcion: str = Field(...)
     
@@ -20,6 +21,9 @@ class Materia(MateriaModel):
 class UpdateMateria(BaseModel):
     nombre: Optional[str] = Field(None)
     descripcion: Optional[str] = Field(None)
+
+class AsignarProfesor(BaseModel):
+    id_profesor: PyObjectId = Field(...)
 
 # Colección de Materias
 class MateriaCollection(BaseModel):

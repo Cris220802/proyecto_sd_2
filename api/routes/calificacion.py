@@ -13,18 +13,6 @@ from fastapi.security import OAuth2PasswordBearer
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="http://127.0.0.1:8000/api/v1/token")
 router = APIRouter()
 
-# async def get_current_user(engine: AsyncIOMotorClient = Depends(get_db), token: str = Depends(oauth2_scheme)):
-#     payload = decode_access_token(token)
-#     username = payload.get("sub")
-#     if not username:
-#         raise HTTPException(status_code=401, detail="Token inválido o expirado")
-#     # Verificar si el usuario es alumno o profesor, buscar en ambas colecciones
-#     alumno = await engine.alumnos.find_one({"username": username})
-#     profesor = await engine.profesores.find_one({"username": username})
-#     if not alumno and not profesor:
-#             raise HTTPException(status_code=404, detail="Usuario no encontrado")
-#     return alumno if alumno else profesor
-
 @router.post(
     "/calificaciones",
     response_description="Registrar nueva calificación",
@@ -55,15 +43,27 @@ async def get_all_calificaciones(db: AsyncIOMotorClient = Depends(get_db)):
     return CalificacionCollection(calificaciones=await db.calificaciones.find().to_list(1000))
 
 @router.get(
+    "/calificaciones/{id}",
+    response_description="Obtener una calificacion",
+    response_model=CalificacionModel,
+)
+async def get_calificacion_by_id(id: str, db: AsyncIOMotorClient = Depends(get_db)):
+    if (calificacion := await db.calificaciones.find_one({"_id": ObjectId(id)})) is not None:
+        return calificacion
+    raise HTTPException(status_code=404, detail=f"Calificacion {id} no encontrada")
+
+@router.get(
     "/calificaciones/{id_alumno}",
     response_description="Listar calificaciones por alumno",
     response_model=CalificacionCollection,
 )
 async def get_calificaciones_by_alumno(id_alumno: str, db: AsyncIOMotorClient = Depends(get_db)):
-        # Verifica que el alumno exista
+    # Verifica que el alumno exista
     if not await db.alumnos.find_one({"_id": ObjectId(id_alumno)}):
          raise HTTPException(status_code=404, detail="Alumno no encontrado")
+    
     calificaciones = await db.calificaciones.find({"id_alumno": ObjectId(id_alumno)}).to_list(1000)
+    print(calificaciones)
     return CalificacionCollection(calificaciones=calificaciones)
 
 @router.put(
