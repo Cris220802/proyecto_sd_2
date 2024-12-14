@@ -5,10 +5,16 @@ from typing_extensions import Annotated
 
 PyObjectId = Annotated[str, BeforeValidator(str)]
 
+class MateriaSuper(BaseModel):
+    id: Optional[PyObjectId] = Field(alias="_id", default=None)
+    nombre: str = Field(...)
+    descripcion: str = Field(...)
+    id_profesor: PyObjectId = Field(...)
+    alumnos: List[PyObjectId]
+    
 # Modelo para representar la Materia
 class MateriaModel(BaseModel):
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
-    id_profesor: Optional[PyObjectId] = Field(...)
     nombre: str = Field(...)
     descripcion: str = Field(...)
     
@@ -22,9 +28,13 @@ class UpdateMateria(BaseModel):
     nombre: Optional[str] = Field(None)
     descripcion: Optional[str] = Field(None)
 
-class AsignarProfesor(BaseModel):
+class AsignarProfesor(MateriaSuper):
     id_profesor: PyObjectId = Field(...)
+    
+class AsignarAlumno(MateriaSuper):
+    alumnos: Optional[List] = Field(...)
+    
 
 # Colección de Materias
 class MateriaCollection(BaseModel):
-    materias: List[MateriaModel]
+    materias: List[MateriaSuper]

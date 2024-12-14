@@ -1,16 +1,19 @@
 from passlib.context import CryptContext
 from motor.motor_asyncio import AsyncIOMotorClient
-from fastapi import APIRouter, Depends, HTTPException, Body, status
+from fastapi import APIRouter, Depends, HTTPException, Body, status, UploadFile, File, Form
 from bson import ObjectId
 from pymongo import ReturnDocument
 from fastapi.responses import Response
 from typing import List
 from core.security import decode_access_token
 from core.mongo import get_db
-from models.alumno import AlumnoModel, Alumno, AlumnoCollection, UpdateAlumno
+from models.alumno import AlumnoModel, Alumno, AlumnoCollection, UpdateAlumno, AlumnoCreate, AlumnoModelPass
+from models.materia import MateriaSuper
 from fastapi.security import OAuth2PasswordBearer
 from api.routes.profesor import get_current_profesor
-import datetime
+from helpers.helpers import upload_file, delete_file
+from datetime import datetime
+from typing import Optional
 
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -39,14 +42,39 @@ async def get_current_alumno(engine: AsyncIOMotorClient = Depends(get_db), token
     response_model_by_alias=False,
     dependencies=[Depends(get_current_alumno)]
 )
-async def post_alumno(alumno: Alumno = Body(...), db: AsyncIOMotorClient = Depends(get_db)):
-    hashed_password = pwd_context.hash(alumno.hashed_password)
-    alumno.hashed_password = hashed_password
-    new_alumno = await db.alumnos.insert_one({
-        **alumno.dict(exclude_unset=True),
-    })
-    created_alumno = await db.alumnos.find_one({"_id": new_alumno.inserted_id})
-    return created_alumno
+async def post_alumno(
+    nombre: str = Form(...),
+    apellido: str = Form(...),
+    fecha_nacimiento: datetime = Form(...),
+    direccion: str = Form(...),
+    username: str = Form(...),
+    hashed_password: str = Form(...),
+    archivo: UploadFile = File(...),
+    db: AsyncIOMotorClient = Depends(get_db)
+    ):
+    new_hashed_password = pwd_context.hash(hashed_password)
+    
+     # Obtener URL del archivo en S3
+    file_url_response = await upload_file(file=archivo, bucket="alumnos-sd", path="alumnos")
+    
+    if "url" in file_url_response:
+        imagen = file_url_response["url"]
+        alumno_aux = AlumnoModelPass(
+            username=username,
+            nombre=nombre,
+            apellido=apellido,
+            fecha_nacimiento=fecha_nacimiento,
+            foto=imagen,
+            direccion=direccion,
+            hashed_password=new_hashed_password
+        )
+        new_alumno = await db.alumnos.insert_one({
+            **alumno_aux.dict(exclude_unset=True),
+        })
+        created_alumno = await db.alumnos.find_one({"_id": new_alumno.inserted_id})
+        return created_alumno
+    else:
+        raise HTTPException(status_code=500, detail="Error al subir la imagen")
 
 @router.get(
     "/alumnos",
@@ -75,36 +103,98 @@ async def get_alumno_by_id(id: str, db: AsyncIOMotorClient = Depends(get_db)):
     response_description="Actualizar alumno",
     response_model=AlumnoModel,
     response_model_by_alias=False,
-    dependencies=[Depends(get_current_alumno)]
+    dependencies=[Depends(get_current_alumno)],
 )
-async def update_alumno(id: str, alumno: UpdateAlumno = Body(...), db: AsyncIOMotorClient = Depends(get_db)):
-    alumno = {
-        k: v for k, v in alumno.model_dump(by_alias=True).items() if v is not None
-    }
-    if len(alumno) >= 1:
-        update_result = await db.alumnos.find_one_and_update(
-            {"_id": ObjectId(id)},
-            {"$set": alumno},
-            return_document=ReturnDocument.AFTER,
-        )
-        if update_result is not None:
-            return update_result
-        else:
-            raise HTTPException(status_code=404, detail=f"Alumno {id} no encontrado")
-    if (existing_alumno := await db.alumnos.find_one({"_id": id})) is not None:
-        return existing_alumno
-    raise HTTPException(status_code=404, detail=f"Alumno {id} no encontrado")
+async def update_alumno(
+    id: str,
+    nombre: str = Form(...),
+    apellido: str = Form(...),
+    fecha_nacimiento: datetime = Form(...),
+    direccion: str = Form(...),
+    username: str = Form(...),
+    archivo: Optional[UploadFile] = None,
+    db: AsyncIOMotorClient = Depends(get_db),
+):
+    # Verificar que el ID sea válido
+    if not ObjectId.is_valid(id):
+        raise HTTPException(status_code=400, detail="ID no válido")
 
+    # Buscar el alumno en la base de datos
+    alumno = await db.alumnos.find_one({"_id": ObjectId(id)})
+    if not alumno:
+        raise HTTPException(status_code=404, detail="Alumno no encontrado")
+
+    # Preparar campos para la actualización
+    update_fields = {
+        "nombre": nombre,
+        "apellido": apellido,
+        "fecha_nacimiento": fecha_nacimiento,
+        "direccion": direccion,
+        "username": username,
+    }
+
+    # Manejo del archivo (si se proporciona)
+    if archivo:
+        # Obtener la URL existente de la foto (si tiene)
+        existing_file_url = alumno.get("foto")
+        if existing_file_url:
+            existing_file_name = existing_file_url.split('/')[-1]
+            await delete_file("alumnos-sd", "alumnos", existing_file_name)
+
+        # Subir la nueva imagen
+        file_url_response = await upload_file(file=archivo, bucket="alumnos-sd", path="alumnos")
+        if "url" in file_url_response:
+            update_fields["foto"] = file_url_response["url"]
+        else:
+            raise HTTPException(status_code=500, detail="Error al subir la imagen")
+
+    # Eliminar claves con valores nulos
+    update_fields = {k: v for k, v in update_fields.items() if v is not None}
+
+    # Actualizar el alumno en la base de datos
+    updated_alumno = await db.alumnos.find_one_and_update(
+        {"_id": ObjectId(id)},
+        {"$set": update_fields},
+        return_document=ReturnDocument.AFTER,
+    )
+
+    if updated_alumno:
+        # # Convertir `_id` a cadena antes de devolver la respuesta
+        # updated_alumno["_id"] = str(updated_alumno["_id"])
+        # return AlumnoModel(**update_alumno)
+        return updated_alumno
+    else:
+        raise HTTPException(status_code=500, detail="Error al actualizar el alumno")
+    
 @router.delete("/alumnos/{id}", response_description="Eliminar Alumno", dependencies=[Depends(get_current_profesor)])
 async def delete_alumno(id: str, db: AsyncIOMotorClient = Depends(get_db)):
+    # Validar que el ID sea válido
+    if not ObjectId.is_valid(id):
+        raise HTTPException(status_code=400, detail="ID no válido")
+
+    # Buscar el alumno para verificar si existe y obtener la URL de la imagen
+    alumno = await db.alumnos.find_one({"_id": ObjectId(id)})
+    if not alumno:
+        raise HTTPException(status_code=404, detail=f"Alumno con ID {id} no encontrado")
+
+    # Eliminar la imagen asociada del S3 si existe
+    if "foto" in alumno and alumno["foto"]:
+        existing_file_url = alumno["foto"]
+        existing_file_name = existing_file_url.split('/')[-1]
+        await delete_file(bucket="alumnos-sd", path="alumnos", file_name=existing_file_name)
+
+    # Intentar eliminar el documento del alumno
     delete_result = await db.alumnos.delete_one({"_id": ObjectId(id)})
     if delete_result.deleted_count == 1:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
-    raise HTTPException(status_code=404, detail=f"Alumno {id} no encontrado")
+
+    # Error inesperado (no debería ocurrir después de las validaciones)
+    raise HTTPException(status_code=500, detail="Error al intentar eliminar al alumno")
 
 @router.post(
     "/alumnos/{id_alumno}/inscribir",
     response_description="Inscribir alumno a una materia",
+    response_model=MateriaSuper,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(get_current_alumno)]  # Requiere autenticación
 )
@@ -114,20 +204,26 @@ async def inscribir_alumno_a_materia(
     db: AsyncIOMotorClient = Depends(get_db)
 ):
     # Verifica que el alumno exista
-    if not await db.alumnos.find_one({"_id": ObjectId(id_alumno)}):
+    alumno = await db.alumnos.find_one({"_id": ObjectId(id_alumno)})
+    if not alumno:
         raise HTTPException(status_code=404, detail="Alumno no encontrado")
 
     # Verifica que la materia exista
-    if not await db.materias.find_one({"_id": ObjectId(id_materia)}):
+    materia = await db.materias.find_one({"_id": ObjectId(id_materia)})
+    if not materia:
         raise HTTPException(status_code=404, detail="Materia no encontrada")
 
-    # Crea la inscripción
-    nueva_inscripcion = {
-        "id_alumno": ObjectId(id_alumno),
-        "id_materia": ObjectId(id_materia),
-        "fecha_inscripcion": datetime.datetime.utcnow(),
-    }
-    result = await db.inscripciones.insert_one(nueva_inscripcion)
+    # Agrega el ID del alumno al campo `alumnos` en la materia
+    if "alumnos" not in materia or not isinstance(materia["alumnos"], list):
+        materia["alumnos"] = []
 
-    return {"id": str(result.inserted_id), **nueva_inscripcion}
+    if ObjectId(id_alumno) not in materia["alumnos"]:
+        materia["alumnos"].append(ObjectId(id_alumno))
+        await db.materias.update_one(
+            {"_id": ObjectId(id_materia)},
+            {"$set": {"alumnos": materia["alumnos"]}}
+        )
+
+    get_materia = await db.materias.find_one({"_id": ObjectId(id_materia)})
+    return get_materia
 

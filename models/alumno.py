@@ -15,7 +15,18 @@ class AlumnoModel(BaseModel):
     foto: str = Field(...)
     username: str = Field(...)
 
-class Alumno(AlumnoModel):
+class AlumnoModelPass(AlumnoModel):
+    hashed_password: str = Field(...) 
+    
+class AlumnoCreate(BaseModel):
+    id: Optional[PyObjectId] = Field(alias="_id", default=None)
+    nombre: str = Field(...)
+    apellido: str = Field(...)
+    fecha_nacimiento: datetime = Field(...)
+    direccion: str = Field(...)
+    username: str = Field(...)
+    
+class Alumno(AlumnoCreate):
     hashed_password: str = Field(...)  # Contraseña encriptada
 
 class UpdateAlumno(BaseModel):
